@@ -761,6 +761,7 @@
         .section {
             padding: 5rem 0;
             position: relative;
+            z-index: 1;
             border-bottom: 1px solid var(--border);
         }
 
@@ -1377,23 +1378,26 @@
             cursor: pointer;
         }
 
+        /* PENTING: Class untuk background animasi di area utama */
         .tubes-canvas {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
             z-index: 0;
-            opacity: 0;
             pointer-events: none;
             transition: opacity 1s ease;
         }
 
         .tubes-canvas.is-active {
-            opacity: 0.55;
+            opacity: 0.20;
+            /* Opacity diturunkan */
         }
 
         html[data-theme="light"] .tubes-canvas.is-active {
-            opacity: 0.28;
+            opacity: 0.10;
+            /* Opacity diturunkan untuk mode terang */
         }
 
         .tubes-hint {
@@ -1427,8 +1431,6 @@
            10. FULL RESPONSIVE MEDIA QUERIES
            ========================================= */
         @media(max-width: 991px) {
-
-            /* Perubahan Breakpoint Menjadi 991px (Laptop Kecil & Tablet) */
             .mobile-menu-btn {
                 display: block;
             }
@@ -1474,12 +1476,10 @@
                 padding: 3.5rem 0;
             }
 
-            /* Grid override for Team */
             .team-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
 
-            /* Alignment override for Reveal section */
             .reveal-stat-row {
                 flex-direction: column;
                 gap: 0.8rem;
@@ -1491,7 +1491,6 @@
                 margin: 10px 0;
             }
 
-            /* Leaflet & Answers block adjustments */
             #map {
                 height: 320px;
             }
@@ -1547,14 +1546,13 @@
             <a href="#hero">Beranda</a>
             <a href="#tahap1">Masalah</a>
             <a href="#tahap2">Data & Peta</a>
-            <a href="#tahap4">Boxplot</a>
+            <a href="#tahap4">EDA</a>
             <a href="#tahap5">Modeling</a>
             <a href="#tahap6">Kesimpulan</a>
         </div>
 
         <div class="nav-actions">
             <button class="theme-toggle hover-target" aria-label="Toggle Theme">🌙</button>
-            <!-- DIUBAH: d-md-none menjadi d-lg-none agar sinkron dengan CSS -->
             <button class="mobile-menu-btn hover-target d-lg-none" aria-label="Menu" id="mobile-toggle">☰</button>
         </div>
     </nav>
@@ -1627,6 +1625,8 @@
     </section>
 
     <main>
+        <canvas id="tubes-canvas" class="tubes-canvas w-100" aria-hidden="true"></canvas>
+
         <section id="tahap1" class="section" data-parallax="01">
             <div class="section-watermark">01</div>
             <div class="section-eyebrow" data-aos="fade-right">Tahap 1 / Problem Definition</div>
@@ -1883,7 +1883,6 @@
             </div>
 
             <div class="text-center cta-outro" id="cta-outro" style="margin-top: 4rem;">
-                <canvas id="tubes-canvas" class="tubes-canvas" aria-hidden="true"></canvas>
                 <div class="pearson-card hover-target"
                     style="display: inline-block; text-align: center; max-width: 600px; padding: 2.5rem;">
                     <h2
@@ -1897,7 +1896,8 @@
                         Kelompok 5</div>
                     <a href="#hero" class="btn-magnetic">Kembali ke Atas ⬆</a>
                 </div>
-                <p class="tubes-hint" id="tubes-hint">✦ klik area ini untuk mengganti palet warna</p>
+                <p class="tubes-hint" id="tubes-hint">✦ klik area konten ini untuk mengganti palet warna background
+                    abstrak</p>
             </div>
         </section>
     </main>
@@ -2093,6 +2093,7 @@
         let ambX = mouseX; let ambY = mouseY;
 
         window.addEventListener('mousemove', (e) => {
+            if (!e.isTrusted) return; // ABAIKAN event palsu dari animasi otomatis tubes
             mouseX = e.clientX; mouseY = e.clientY;
             if (cursorDot) {
                 cursorDot.style.transform = `translate(${mouseX}px, ${mouseY}px) translate(-50%, -50%)`;
@@ -2378,14 +2379,14 @@
         themeBtn.innerHTML = currentTheme === 'light' ? '☀️' : '🌙';
 
         /* =========================================
-           7. TUBES CURSOR — CTA BACKDROP
+           7. TUBES CURSOR — AUTO BACKGROUND
            ========================================= */
-        (function initTubesCTA() {
+        (function initTubesBackground() {
             const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-            const outro = document.getElementById('cta-outro');
             const canvas = document.getElementById('tubes-canvas');
             const hint = document.getElementById('tubes-hint');
-            if (!outro || !canvas || prefersReduced) {
+
+            if (!canvas || prefersReduced) {
                 if (hint) hint.style.display = 'none';
                 return;
             }
@@ -2407,50 +2408,58 @@
             };
 
             let app = null;
-            let loading = false;
-            let loaded = false;
 
             async function loadTubes() {
-                if (loading || loaded) return;
-                loading = true;
                 try {
                     const module = await import('https://cdn.jsdelivr.net/npm/threejs-components@0.0.19/build/cursors/tubes1.min.js');
                     const TubesCursor = module.default;
+
                     app = TubesCursor(canvas, {
                         tubes: {
                             colors: randomFrom(palette(), 3),
-                            lights: { intensity: 200, colors: randomFrom(palette(), 4) }
+                            lights: { intensity: 150, colors: randomFrom(palette(), 4) }
                         }
                     });
-                    loaded = true;
+
+                    // Perkecil ukuran scene Tubes sebesar 40% (0.6)
+                    if (app && app.scene) {
+                        app.scene.scale.set(0.6, 0.6, 0.6);
+                    }
+
                     canvas.classList.add('is-active');
+
+                    // --- ANIMASI OTOMATIS (MANDIRI DARI KURSOR) ---
+                    let autoMoveAngle = 0;
+                    function autoMoveTubes() {
+                        autoMoveAngle += 0.004; // Kecepatan pergerakan
+
+                        // Kalkulasi pergerakan membentuk angka 8 / Lissajous curve
+                        const x = (window.innerWidth / 2) + Math.cos(autoMoveAngle) * (window.innerWidth * 0.35);
+                        const y = (window.innerHeight / 2) + Math.sin(autoMoveAngle * 0.7) * (window.innerHeight * 0.35);
+
+                        // Tembakkan event mousemove palsu (event.isTrusted = false)
+                        window.dispatchEvent(new MouseEvent('mousemove', {
+                            clientX: x,
+                            clientY: y,
+                            bubbles: true
+                        }));
+
+                        requestAnimationFrame(autoMoveTubes);
+                    }
+                    // Mulai loop pergerakan otomatis
+                    autoMoveTubes();
+
                 } catch (err) {
                     console.warn('Tubes cursor gagal dimuat, backdrop dilewati:', err);
                     if (hint) hint.style.display = 'none';
-                } finally {
-                    loading = false;
                 }
             }
 
-            // function disposeTubes() {
-            //     if (app && typeof app.dispose === 'function') app.dispose();
-            //     app = null;
-            //     loaded = false;
-            //     canvas.classList.remove('is-active');
-            // }
+            // Langsung muat animasi sesaat setelah script dieksekusi (selalu aktif)
+            loadTubes();
 
-            const ctaObserver = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        loadTubes();
-                    } else {
-                        disposeTubes();
-                    }
-                });
-            }, { threshold: 0.15 });
-            ctaObserver.observe(outro);
-
-            outro.addEventListener('click', (e) => {
+            // Opsional: Klik di layar bisa tetap mengganti warna
+            window.addEventListener('click', (e) => {
                 if (e.target.closest('a, button')) return;
                 if (app && app.tubes) {
                     app.tubes.setColors(randomFrom(palette(), 3));
